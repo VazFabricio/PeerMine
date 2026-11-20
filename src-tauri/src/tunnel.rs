@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{ lookup_host, TcpListener, TcpStream, UdpSocket };
+use tokio::net::{lookup_host, TcpListener, TcpStream, UdpSocket};
 
 const ALPN: &[u8] = b"peermine/1";
 
@@ -144,12 +144,7 @@ fn parse_stun_binding_response(buf: &[u8], expected_tx_id: &[u8; 12]) -> Option<
         // XOR-MAPPED-ADDRESS (0x0020)
         if attr_type == 0x0020 && val.len() >= 8 && val[1] == 0x01 {
             let xport = u16::from_be_bytes([val[2], val[3]]) ^ 0x2112;
-            let ip = Ipv4Addr::new(
-                val[4] ^ 0x21,
-                val[5] ^ 0x12,
-                val[6] ^ 0xA4,
-                val[7] ^ 0x42,
-            );
+            let ip = Ipv4Addr::new(val[4] ^ 0x21, val[5] ^ 0x12, val[6] ^ 0xA4, val[7] ^ 0x42);
             return Some(SocketAddr::V4(SocketAddrV4::new(ip, xport)));
         }
         // MAPPED-ADDRESS (0x0001)
@@ -170,7 +165,9 @@ fn parse_stun_binding_response(buf: &[u8], expected_tx_id: &[u8; 12]) -> Option<
 /// Descobre o endereço IPv4 público:porta via STUN (Google/Cloudflare, como no projeto conversa)
 /// usando a mesma porta UDP local que será entregue ao Endpoint QUIC, e opcionalmente
 /// envia pacotes UDP de pre-punching para abrir o NAT local em direção ao par remoto.
-async fn discover_stun_and_prepare_port(pre_punch_targets: &[SocketAddr]) -> (u16, Option<SocketAddr>) {
+async fn discover_stun_and_prepare_port(
+    pre_punch_targets: &[SocketAddr],
+) -> (u16, Option<SocketAddr>) {
     let Ok(sock) = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await else {
         return (0, None);
     };
@@ -337,10 +334,7 @@ fn format_selected_route(remote_addr: &TransportAddr) -> String {
 fn is_public_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            !v4.is_private()
-                && !v4.is_loopback()
-                && !v4.is_link_local()
-                && !v4.is_unspecified()
+            !v4.is_private() && !v4.is_loopback() && !v4.is_link_local() && !v4.is_unspecified()
         }
         IpAddr::V6(v6) => {
             !v6.is_loopback()
@@ -482,7 +476,10 @@ impl TunnelState {
             Ok::<_, String>((endpoint, stun_addr, addr))
         })?;
 
-        let has_ipv6 = addr.addrs.iter().any(|a| matches!(a, TransportAddr::Ip(s) if s.is_ipv6() && is_public_ip(&s.ip())));
+        let has_ipv6 = addr
+            .addrs
+            .iter()
+            .any(|a| matches!(a, TransportAddr::Ip(s) if s.is_ipv6() && is_public_ip(&s.ip())));
         let initial_route = match (stun_addr.is_some(), has_ipv6) {
             (true, true) => "Aguardando (P2P Direto: STUN IPv4 + IPv6)".to_string(),
             (true, false) => "Aguardando (P2P Direto: STUN/UPnP IPv4)".to_string(),
