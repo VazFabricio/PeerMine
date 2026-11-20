@@ -308,27 +308,35 @@
           <label for="hostPort">Porta do Minecraft (LAN ou Servidor):</label>
           <div class="row" style="margin-bottom: 8px;">
             <input id="hostPort" type="number" min="1" max="65535" value="25565" style="width: 110px;" />
-            <button id="btnHost">Hostear Mundo</button>
+            <button id="btnHost">1. Hostear Mundo</button>
             <button id="btnCopyTicket" class="secondary" disabled>Copiar Código</button>
           </div>
-          <label for="ticketOut">Código da Sala (mande o mesmo para todos os amigos):</label>
+          <label for="ticketOut">Código da Sala (envie para o amigo):</label>
           <textarea id="ticketOut" readonly placeholder="Clique em 'Hostear Mundo' para gerar o código PM1:..."></textarea>
-          <div class="hint">No Minecraft: abra o mundo → ESC → <b>Abrir para LAN</b> e coloque a porta exibida aqui.</div>
+          <label for="answerIn" style="margin-top: 8px;">Cole a Resposta do Amigo (PM2:...):</label>
+          <div class="row" style="align-items: flex-start;">
+            <textarea id="answerIn" placeholder="Cole o código PM2:... enviado pelo amigo aqui" style="flex:1; min-height: 54px;"></textarea>
+            <button id="btnAcceptAnswer" disabled>2. Conectar Amigo</button>
+          </div>
+          <div class="hint">No Minecraft: ESC → <b>Abrir para LAN</b> e informe a porta acima. Depois cole a resposta PM2: de cada amigo.</div>
         </fieldset>
 
         <fieldset class="card">
           <legend>Amigo — Entrar no Mundo</legend>
-          <label for="ticketIn">Cole o código do Host aqui:</label>
-          <textarea id="ticketIn" placeholder="Cole o código PM1:... aqui"></textarea>
-          <div class="row" style="margin-top: 8px;">
+          <label for="ticketIn">1. Cole o código do Host aqui (PM1:...):</label>
+          <textarea id="ticketIn" placeholder="Cole o código PM1:... aqui" style="min-height: 58px;"></textarea>
+          <div class="row" style="margin-top: 8px; margin-bottom: 8px;">
             <label for="clientPort" style="margin:0;">Porta local:</label>
             <input id="clientPort" type="number" min="1" max="65535" value="25565" style="width: 100px;" />
-            <button id="btnJoin">Entrar no Mundo</button>
+            <button id="btnJoin">1. Gerar Resposta</button>
+            <button id="btnCopyAnswer" class="secondary" disabled>Copiar Resposta</button>
           </div>
+          <label for="answerOut">2. Envie esta Resposta ao Host (PM2:...):</label>
+          <textarea id="answerOut" readonly placeholder="Clique em 'Gerar Resposta' e mande este código PM2:... para o Host" style="min-height: 54px;"></textarea>
           <div id="joinAddressBox" class="address-box" style="display:none;">
             No Minecraft, conecte em: <span id="joinAddress">127.0.0.1:25565</span>
           </div>
-          <div class="hint">Depois de conectar, abra o Minecraft → <b>Multiplayer → Conexão Direta</b> → digite <b>localhost</b>.</div>
+          <div class="hint">Quando o Host colar sua resposta e o status ficar verde, abra o Minecraft → <b>Multiplayer → Conexão Direta</b> → <b>localhost</b>.</div>
         </fieldset>
       </div>
     </div>

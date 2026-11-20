@@ -18,6 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{lookup_host, TcpListener, TcpStream, UdpSocket};
 
 const ALPN: &[u8] = b"peermine/1";
+const PUNCH_ALPN: &[u8] = b"peermine/punch";
 
 const STUN_SERVERS: &[&str] = &[
     "stun.cloudflare.com:3478",
@@ -42,6 +43,7 @@ struct ActiveSession {
     stop: Arc<AtomicBool>,
     role: String,
     ticket: String,
+    endpoint: Option<Endpoint>,
     peers: Arc<AtomicUsize>,
     bytes_tx: Arc<AtomicU64>,
     bytes_rx: Arc<AtomicU64>,
@@ -68,7 +70,7 @@ impl Default for TunnelState {
     }
 }
 
-fn encode_ticket(addr: &EndpointAddr) -> Result<String, String> {
+fn encode_ticket_with_prefix(prefix: &str, addr: &EndpointAddr) -> Result<String, String> {
     let json = serde_json::to_vec(addr).map_err(|e| format!("Erro ao serializar ticket: {e}"))?;
     let mut enc = DeflateEncoder::new(Vec::new(), Compression::best());
     enc.write_all(&json)
@@ -76,14 +78,14 @@ fn encode_ticket(addr: &EndpointAddr) -> Result<String, String> {
     let compressed = enc
         .finish()
         .map_err(|e| format!("Erro ao finalizar compressão: {e}"))?;
-    Ok(format!("PM1:{}", URL_SAFE_NO_PAD.encode(compressed)))
+    Ok(format!("{prefix}{}", URL_SAFE_NO_PAD.encode(compressed)))
 }
 
-fn decode_ticket(input: &str) -> Result<EndpointAddr, String> {
+fn decode_ticket_with_prefix(expected_prefix: &str, input: &str) -> Result<EndpointAddr, String> {
     let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     let payload = clean
-        .strip_prefix("PM1:")
-        .ok_or_else(|| "Código inválido. Deve começar com PM1:".to_string())?;
+        .strip_prefix(expected_prefix)
+        .ok_or_else(|| format!("Código inválido. Deve começar com {expected_prefix}"))?;
     let compressed = URL_SAFE_NO_PAD
         .decode(payload)
         .map_err(|e| format!("Base64 inválido: {e}"))?;
@@ -92,6 +94,14 @@ fn decode_ticket(input: &str) -> Result<EndpointAddr, String> {
     dec.read_to_end(&mut json)
         .map_err(|e| format!("Ticket corrompido: {e}"))?;
     serde_json::from_slice(&json).map_err(|e| format!("JSON do ticket inválido: {e}"))
+}
+
+fn encode_ticket(addr: &EndpointAddr) -> Result<String, String> {
+    encode_ticket_with_prefix("PM1:", addr)
+}
+
+fn decode_ticket(input: &str) -> Result<EndpointAddr, String> {
+    decode_ticket_with_prefix("PM1:", input)
 }
 
 /// Constrói um pacote RFC 5389 STUN Binding Request (20 bytes).
@@ -501,6 +511,7 @@ impl TunnelState {
                 stop: Arc::clone(&stop),
                 role: "host".into(),
                 ticket: ticket.clone(),
+                endpoint: Some(endpoint.clone()),
                 peers: Arc::clone(&peers),
                 bytes_tx: Arc::clone(&bytes_tx),
                 bytes_rx: Arc::clone(&bytes_rx),
@@ -595,7 +606,63 @@ impl TunnelState {
         Ok(ticket)
     }
 
-    pub fn start_client(&self, ticket: &str, local_port: u16) -> Result<(), String> {
+    pub fn accept_peer_answer(&self, answer: &str) -> Result<(), String> {
+        let mut peer_addr = decode_ticket_with_prefix("PM2:", answer)?;
+        peer_addr.addrs.retain(|a| a.is_ip());
+        if peer_addr.addrs.is_empty() {
+            return Err("A resposta PM2: não contém nenhum endereço IP válido.".to_string());
+        }
+
+        let (endpoint, stop, route, peers) = {
+            let guard = self
+                .session
+                .lock()
+                .map_err(|_| "Erro interno de estado".to_string())?;
+            let sess = guard
+                .as_ref()
+                .ok_or_else(|| "Inicie o Host antes de colar a resposta do amigo.".to_string())?;
+            if sess.role != "host" || sess.stop.load(Ordering::Relaxed) {
+                return Err("Sessão de Host não está ativa.".to_string());
+            }
+            let ep = sess
+                .endpoint
+                .clone()
+                .ok_or_else(|| "Endpoint do Host indisponível.".to_string())?;
+            (
+                ep,
+                Arc::clone(&sess.stop),
+                Arc::clone(&sess.route),
+                Arc::clone(&sess.peers),
+            )
+        };
+
+        let initial_peers = peers.load(Ordering::Relaxed);
+        if let Ok(mut rg) = route.lock() {
+            *rg = "Furando NAT P2P com o amigo...".to_string();
+        }
+
+        // Dispara pacotes QUIC Initial a partir do mesmo socket UDP do Host em direção ao amigo
+        // para abrir a tabela NAT/Firewall do Host enquanto o amigo tenta conectar.
+        self.runtime.spawn(async move {
+            for attempt in 0..12 {
+                if stop.load(Ordering::Relaxed) || peers.load(Ordering::Relaxed) > initial_peers {
+                    break;
+                }
+                let _ = tokio::time::timeout(
+                    Duration::from_millis(1400),
+                    endpoint.connect(peer_addr.clone(), PUNCH_ALPN),
+                )
+                .await;
+                if attempt < 11 {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn start_client(&self, ticket: &str, local_port: u16) -> Result<String, String> {
         self.stop();
         let remote_addr = decode_ticket(ticket)?;
 
@@ -611,32 +678,45 @@ impl TunnelState {
             })
             .collect();
 
-        let (endpoint, conn, listener) = self.runtime.block_on(async {
+        let (endpoint, listener, answer_ticket) = self.runtime.block_on(async {
             let listener = TcpListener::bind(("127.0.0.1", local_port))
                 .await
                 .map_err(|e| format!("Porta local {local_port} ocupada ou bloqueada: {e}"))?;
 
             let (endpoint, _) = bind_pure_p2p_endpoint(false, &pre_punch_targets).await?;
 
-            let conn = tokio::time::timeout(
-                Duration::from_secs(12),
-                endpoint.connect(clean_remote.clone(), ALPN),
-            )
-            .await
-            .map_err(|_| {
-                "Timeout ao conectar P2P direto ao Host (sem relay; verifique IPv6/UPnP/firewall)"
-                    .to_string()
-            })?
-            .map_err(|e| format!("Falha ao conectar P2P direto ao Host: {e}"))?;
+            // Aguarda brevemente o portmapper/IPv6 antes de gerar a resposta PM2:
+            let mut watcher = endpoint.watch_addr();
+            let deadline = tokio::time::Instant::now() + Duration::from_millis(450);
+            loop {
+                let current = watcher.get();
+                let has_public = current.addrs.iter().any(|a| match a {
+                    TransportAddr::Ip(s) => is_public_ip(&s.ip()),
+                    _ => false,
+                });
+                if has_public && current.addrs.len() >= 2 {
+                    break;
+                }
+                if tokio::time::timeout_at(deadline, watcher.updated())
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
 
-            Ok::<_, String>((endpoint, conn, listener))
+            let my_addr = endpoint.addr();
+            let answer_ticket = encode_ticket_with_prefix("PM2:", &my_addr)?;
+            Ok::<_, String>((endpoint, listener, answer_ticket))
         })?;
 
         let stop = Arc::new(AtomicBool::new(false));
-        let peers = Arc::new(AtomicUsize::new(1));
+        let peers = Arc::new(AtomicUsize::new(0));
         let bytes_tx = Arc::new(AtomicU64::new(0));
         let bytes_rx = Arc::new(AtomicU64::new(0));
-        let route = Arc::new(Mutex::new("Direto P2P (UDP • BBRv3)".to_string()));
+        let route = Arc::new(Mutex::new(
+            "Aguardando Host colar resposta PM2:...".to_string(),
+        ));
         let rtt_ms = Arc::new(Mutex::new(None));
         let last_error = Arc::new(Mutex::new(None));
 
@@ -644,7 +724,8 @@ impl TunnelState {
             *guard = Some(ActiveSession {
                 stop: Arc::clone(&stop),
                 role: "client".into(),
-                ticket: String::new(),
+                ticket: answer_ticket.clone(),
+                endpoint: Some(endpoint.clone()),
                 peers: Arc::clone(&peers),
                 bytes_tx: Arc::clone(&bytes_tx),
                 bytes_rx: Arc::clone(&bytes_rx),
@@ -654,9 +735,10 @@ impl TunnelState {
             });
         }
 
-        let shared_conn = Arc::new(tokio::sync::Mutex::new(conn));
+        let shared_conn: Arc<tokio::sync::Mutex<Option<iroh::endpoint::Connection>>> =
+            Arc::new(tokio::sync::Mutex::new(None));
 
-        // Monitora RTT, rota direta (IPv4/IPv6) e reconecta automaticamente se a sessão QUIC cair
+        // Conecta em loop enquanto aguarda o Host colar a resposta PM2:, monitora RTT e reconecta se cair
         let conn_mon = Arc::clone(&shared_conn);
         let ep_mon = endpoint.clone();
         let remote_mon = clean_remote.clone();
@@ -668,8 +750,8 @@ impl TunnelState {
 
         self.runtime.spawn(async move {
             while !stop_mon.load(Ordering::Relaxed) {
-                let active_conn = { conn_mon.lock().await.clone() };
-                if active_conn.close_reason().is_none() {
+                let existing = { conn_mon.lock().await.clone() };
+                if let Some(active_conn) = existing.filter(|c| c.close_reason().is_none()) {
                     peers_mon.store(1, Ordering::Relaxed);
                     let paths = active_conn.paths();
                     if let Some(sel) = paths.iter().find(|x| x.is_selected()) {
@@ -682,26 +764,25 @@ impl TunnelState {
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
-                    // Auto-reconexão transparente para estabilidade superior ao Hamachi
-                    if let Ok(mut rg) = route_mon.lock() {
-                        *rg = "Reconectando P2P Direto...".to_string();
-                    }
+                    peers_mon.store(0, Ordering::Relaxed);
                     match tokio::time::timeout(
-                        Duration::from_secs(8),
+                        Duration::from_secs(3),
                         ep_mon.connect(remote_mon.clone(), ALPN),
                     )
                     .await
                     {
                         Ok(Ok(new_conn)) => {
-                            *conn_mon.lock().await = new_conn;
+                            *conn_mon.lock().await = Some(new_conn);
                             peers_mon.store(1, Ordering::Relaxed);
                             if let Ok(mut eg) = err_mon.lock() {
                                 *eg = None;
                             }
+                            if let Ok(mut rg) = route_mon.lock() {
+                                *rg = "Direto P2P (UDP • BBRv3)".to_string();
+                            }
                         }
                         _ => {
-                            peers_mon.store(0, Ordering::Relaxed);
-                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            tokio::time::sleep(Duration::from_millis(300)).await;
                         }
                     }
                 }
@@ -724,25 +805,28 @@ impl TunnelState {
                 let peers_s = Arc::clone(&peers);
 
                 tokio::spawn(async move {
-                    let mut conn_s = { shared_conn_s.lock().await.clone() };
-                    let mut stream_res = conn_s.open_bi().await;
-
-                    // Se a conexão QUIC caiu entre tentativas do Minecraft, reconecta na hora
-                    if stream_res.is_err() {
+                    let mut conn_opt = { shared_conn_s.lock().await.clone() };
+                    if conn_opt.as_ref().is_none_or(|c| c.close_reason().is_some()) {
                         if let Ok(Ok(new_conn)) = tokio::time::timeout(
-                            Duration::from_secs(8),
+                            Duration::from_secs(5),
                             ep_s.connect(remote_s, ALPN),
                         )
                         .await
                         {
-                            *shared_conn_s.lock().await = new_conn.clone();
+                            *shared_conn_s.lock().await = Some(new_conn.clone());
                             peers_s.store(1, Ordering::Relaxed);
-                            conn_s = new_conn;
-                            stream_res = conn_s.open_bi().await;
+                            conn_opt = Some(new_conn);
                         }
                     }
 
-                    match stream_res {
+                    let Some(conn_s) = conn_opt else {
+                        if let Ok(mut g) = err_s.lock() {
+                            *g = Some("Túnel ainda aguardando conexão P2P com o Host.".to_string());
+                        }
+                        return;
+                    };
+
+                    match conn_s.open_bi().await {
                         Ok((send, recv)) => {
                             if let Ok(mut g) = err_s.lock() {
                                 *g = None;
@@ -758,12 +842,13 @@ impl TunnelState {
                 });
             }
             peers.store(0, Ordering::Relaxed);
-            let final_conn = shared_conn.lock().await;
-            final_conn.close(0u32.into(), b"bye");
+            if let Some(final_conn) = shared_conn.lock().await.take() {
+                final_conn.close(0u32.into(), b"bye");
+            }
             endpoint.close().await;
         });
 
-        Ok(())
+        Ok(answer_ticket)
     }
 }
 
@@ -832,9 +917,21 @@ mod tests {
             .local_addr()
             .unwrap()
             .port();
-        client_state
+        let answer = client_state
             .start_client(&ticket, probe_port)
-            .expect("cliente P2P puro deve conectar direto ao host");
+            .expect("cliente P2P puro deve gerar resposta PM2:");
+        assert!(answer.starts_with("PM2:"));
+
+        host_state
+            .accept_peer_answer(&answer)
+            .expect("host deve aceitar resposta PM2:");
+
+        // Aguarda o túnel P2P fechar a conexão direta
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while client_state.status().peers == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(client_state.status().peers, 1);
 
         let mut mc_client = std::net::TcpStream::connect(("127.0.0.1", probe_port)).unwrap();
         mc_client

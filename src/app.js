@@ -12,9 +12,13 @@ const els = {
   btnHost: document.getElementById('btnHost'),
   btnCopyTicket: document.getElementById('btnCopyTicket'),
   ticketOut: document.getElementById('ticketOut'),
+  answerIn: document.getElementById('answerIn'),
+  btnAcceptAnswer: document.getElementById('btnAcceptAnswer'),
   ticketIn: document.getElementById('ticketIn'),
   clientPort: document.getElementById('clientPort'),
   btnJoin: document.getElementById('btnJoin'),
+  btnCopyAnswer: document.getElementById('btnCopyAnswer'),
+  answerOut: document.getElementById('answerOut'),
   joinAddressBox: document.getElementById('joinAddressBox'),
   joinAddress: document.getElementById('joinAddress'),
 };
@@ -76,12 +80,14 @@ async function refreshStatus() {
       els.btnStop.disabled = true;
       els.btnHost.disabled = false;
       els.btnJoin.disabled = false;
+      els.btnAcceptAnswer.disabled = true;
       return;
     }
 
     els.btnStop.disabled = false;
     els.btnHost.disabled = true;
     els.btnJoin.disabled = true;
+    els.btnAcceptAnswer.disabled = st.role !== 'host';
     els.statRtt.textContent = st.rtt_ms != null ? `${st.rtt_ms} ms` : '-- ms';
     els.statRoute.textContent = st.route || '--';
     els.statPeers.textContent = String(st.peers);
@@ -92,10 +98,10 @@ async function refreshStatus() {
 
     if (st.role === 'host') {
       if (st.peers > 0) setBadge(`Conectado P2P (${st.peers} jogador)`, 'ok');
-      else setBadge('Host Ativo — Aguardando amigos...', 'warn');
+      else setBadge('Host Ativo — Cole a resposta PM2: do amigo', 'warn');
     } else if (st.role === 'client') {
       if (st.peers > 0) setBadge('Conectado P2P ao Host', 'ok');
-      else setBadge('Conexão encerrada', 'err');
+      else setBadge('Aguardando Host colar sua resposta PM2:...', 'warn');
     }
 
     if (st.last_error) {
@@ -125,11 +131,30 @@ els.btnHost.addEventListener('click', async () => {
     const ticket = await invoke('start_host', { mcPort: port });
     els.ticketOut.value = ticket;
     els.btnCopyTicket.disabled = false;
+    els.btnAcceptAnswer.disabled = false;
     startPolling();
   } catch (err) {
     els.btnHost.disabled = false;
     setBadge('Erro ao hostear', 'err');
     alert(String(err));
+  }
+});
+
+els.btnAcceptAnswer.addEventListener('click', async () => {
+  const answer = els.answerIn.value.trim();
+  if (!answer) {
+    alert('Cole a resposta PM2:... enviada pelo amigo.');
+    return;
+  }
+  try {
+    els.btnAcceptAnswer.disabled = true;
+    await invoke('accept_peer_answer', { answer });
+    els.answerIn.value = '';
+    setBadge('Furando NAT P2P com o amigo...', 'warn');
+  } catch (err) {
+    alert(String(err));
+  } finally {
+    els.btnAcceptAnswer.disabled = false;
   }
 });
 
@@ -152,11 +177,12 @@ els.btnJoin.addEventListener('click', async () => {
   }
   try {
     els.btnJoin.disabled = true;
-    setBadge('Conectando ao Host P2P...', 'warn');
-    await invoke('start_client', { ticket, localPort: port });
+    setBadge('Gerando resposta P2P...', 'warn');
+    const answer = await invoke('start_client', { ticket, localPort: port });
+    els.answerOut.value = answer;
+    els.btnCopyAnswer.disabled = false;
     els.joinAddress.textContent = port === 25565 ? 'localhost (ou 127.0.0.1:25565)' : `127.0.0.1:${port}`;
     els.joinAddressBox.style.display = 'block';
-    playSound('connect');
     startPolling();
   } catch (err) {
     els.btnJoin.disabled = false;
@@ -165,10 +191,20 @@ els.btnJoin.addEventListener('click', async () => {
   }
 });
 
+els.btnCopyAnswer.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(els.answerOut.value);
+  els.btnCopyAnswer.textContent = 'Copiado!';
+  setTimeout(() => (els.btnCopyAnswer.textContent = 'Copiar Resposta'), 1500);
+});
+
 els.btnStop.addEventListener('click', async () => {
   await invoke('stop_tunnel');
   els.ticketOut.value = '';
+  els.answerIn.value = '';
+  els.answerOut.value = '';
   els.btnCopyTicket.disabled = true;
+  els.btnCopyAnswer.disabled = true;
+  els.btnAcceptAnswer.disabled = true;
   els.joinAddressBox.style.display = 'none';
   els.errorHint.style.display = 'none';
   await refreshStatus();
