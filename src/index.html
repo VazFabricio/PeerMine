@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PeerMine</title>
+  <link rel="icon" type="image/png" href="logo.png" />
+  <style>
+    :root {
+      --xp-face: #ece9d8;
+      --xp-face-dark: #d4d0c8;
+      --xp-border-light: #ffffff;
+      --xp-border-mid: #aca899;
+      --xp-border-dark: #716f64;
+      --xp-text: #000000;
+      --xp-muted: #4a483f;
+      --ok-bg: #dff6dd;
+      --ok-border: #107c10;
+      --ok-text: #0b5a0b;
+      --warn-bg: #fff4ce;
+      --warn-border: #9d5d00;
+      --warn-text: #7a4600;
+      --err-bg: #fde7e9;
+      --err-border: #a80000;
+      --err-text: #8c0000;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Tahoma", "MS Sans Serif", "Segoe UI", sans-serif;
+      font-size: 12px;
+      color: var(--xp-text);
+      line-height: 1.4;
+      padding: 0;
+      min-height: 100vh;
+      background: var(--xp-face);
+      user-select: none;
+    }
+
+    .xp-window {
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--xp-face);
+    }
+
+    .xp-body {
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+      flex: 1;
+      align-content: start;
+    }
+
+    .status-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #f5f4ee;
+      border: 2px solid;
+      border-color: var(--xp-border-dark) var(--xp-border-light) var(--xp-border-light) var(--xp-border-dark);
+      box-shadow: inset 1px 1px 0 var(--xp-border-mid);
+    }
+
+    .status-main {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      border: 2px solid var(--xp-border-mid);
+      background: #e5e2d5;
+      color: #333;
+      border-radius: 3px;
+    }
+
+    .badge.ok {
+      background: var(--ok-bg);
+      border-color: var(--ok-border);
+      color: var(--ok-text);
+      font-size: 18px;
+    }
+    .badge.ok::before { content: "●"; color: #16a34a; font-size: 18px; line-height: 1; }
+
+    .badge.warn {
+      background: var(--warn-bg);
+      border-color: var(--warn-border);
+      color: var(--warn-text);
+      font-size: 16px;
+    }
+    .badge.warn::before { content: "●"; color: #d97706; font-size: 16px; line-height: 1; }
+
+    .badge.err {
+      background: var(--err-bg);
+      border-color: var(--err-border);
+      color: var(--err-text);
+      font-size: 16px;
+    }
+    .badge.err::before { content: "●"; color: #dc2626; font-size: 16px; line-height: 1; }
+
+    fieldset.card {
+      margin: 0;
+      padding: 10px 12px 12px 12px;
+      border: 1px solid #d0ccc0;
+      box-shadow: inset 1px 1px 0 #fff, 1px 1px 0 #fff;
+      border-radius: 4px;
+      background: var(--xp-face);
+    }
+
+    fieldset.card > legend {
+      padding: 0 6px;
+      font-weight: 700;
+      font-size: 12px;
+      color: #003399;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 12px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+
+    .stat {
+      background: #ffffff;
+      border: 2px solid;
+      border-color: var(--xp-border-dark) var(--xp-border-light) var(--xp-border-light) var(--xp-border-dark);
+      padding: 7px 9px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      color: var(--xp-muted);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      font-size: 15px;
+      font-weight: 700;
+      margin-top: 2px;
+      color: #000;
+      font-variant-numeric: tabular-nums;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #222;
+      margin-bottom: 4px;
+    }
+
+    input[type="number"], input[type="text"], textarea {
+      width: 100%;
+      background: #ffffff;
+      color: #000000;
+      border: 2px solid;
+      border-color: #7f9db9 #dcd9ce #dcd9ce #7f9db9;
+      padding: 5px 7px;
+      font-size: 12px;
+      font-family: inherit;
+      user-select: text;
+    }
+
+    textarea {
+      font-family: "Lucida Console", "Consolas", monospace;
+      font-size: 11px;
+      resize: vertical;
+      min-height: 76px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: linear-gradient(180deg, #ffffff 0%, #ece9d8 45%, #d8d3c0 100%);
+      color: #000000;
+      border: 1px solid #003c74;
+      border-radius: 3px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.8);
+    }
+
+    button:hover:not(:disabled) {
+      border-color: #e68b2c;
+      box-shadow: inset 0 0 0 2px #ffe08a;
+    }
+
+    button:active:not(:disabled) {
+      background: linear-gradient(180deg, #d4d0c8 0%, #ece9d8 100%);
+      box-shadow: inset 1px 1px 2px rgba(0,0,0,0.25);
+    }
+
+    button:disabled {
+      color: #8b897e;
+      border-color: #aca899;
+      background: #ebe8dc;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    button.secondary { border-color: #716f64; }
+
+    button.danger {
+      border-color: #8c0000;
+      color: #700000;
+      background: linear-gradient(180deg, #fff0f0 0%, #f3d4d4 100%);
+    }
+
+    .hint { font-size: 11px; color: var(--xp-muted); margin-top: 5px; }
+
+    .address-box {
+      background: #ffffff;
+      border: 2px solid;
+      border-color: var(--xp-border-dark) var(--xp-border-light) var(--xp-border-light) var(--xp-border-dark);
+      padding: 8px 10px;
+      font-family: "Consolas", "Lucida Console", monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: #003399;
+      user-select: text;
+      margin-top: 8px;
+    }
+
+    .xp-statusbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 10px;
+      font-size: 11px;
+      color: #333;
+      background: var(--xp-face-dark);
+      border-top: 1px solid #aca899;
+    }
+  </style>
+</head>
+<body>
+  <div class="xp-window">
+    <div class="xp-body">
+      <!-- Status GRANDE -->
+      <div class="status-banner">
+        <div class="status-main">
+          <img src="logo.png" alt="PeerMine" width="38" height="38" style="display:block; flex-shrink:0;" />
+          <span id="connBadge" class="badge">Desconectado</span>
+        </div>
+        <div class="row">
+          <button id="btnStop" class="danger" disabled>Encerrar Túnel</button>
+        </div>
+      </div>
+
+      <!-- Telemetria -->
+      <fieldset class="card">
+        <legend>Telemetria do Túnel (Rust Nativo)</legend>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat-label">Ping (RTT)</div>
+            <div id="statRtt" class="stat-value">-- ms</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Tipo de Rota</div>
+            <div id="statRoute" class="stat-value" style="font-size:13px;">--</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Jogadores</div>
+            <div id="statPeers" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Enviado / Recebido</div>
+            <div id="statTraffic" class="stat-value" style="font-size:13px;">0 KB / 0 KB</div>
+          </div>
+        </div>
+        <div id="errorHint" class="hint" style="color:#8c0000; display:none;"></div>
+      </fieldset>
+
+      <!-- Host vs Entrar -->
+      <div class="grid-2">
+        <fieldset class="card">
+          <legend>Host — Abrir Meu Mundo</legend>
+          <label for="hostPort">Porta do Minecraft (LAN ou Servidor):</label>
+          <div class="row" style="margin-bottom: 8px;">
+            <input id="hostPort" type="number" min="1" max="65535" value="25565" style="width: 110px;" />
+            <button id="btnHost">Hostear Mundo</button>
+            <button id="btnCopyTicket" class="secondary" disabled>Copiar Código</button>
+          </div>
+          <label for="ticketOut">Código da Sala (mande o mesmo para todos os amigos):</label>
+          <textarea id="ticketOut" readonly placeholder="Clique em 'Hostear Mundo' para gerar o código PM1:..."></textarea>
+          <div class="hint">No Minecraft: abra o mundo → ESC → <b>Abrir para LAN</b> e coloque a porta exibida aqui.</div>
+        </fieldset>
+
+        <fieldset class="card">
+          <legend>Amigo — Entrar no Mundo</legend>
+          <label for="ticketIn">Cole o código do Host aqui:</label>
+          <textarea id="ticketIn" placeholder="Cole o código PM1:... aqui"></textarea>
+          <div class="row" style="margin-top: 8px;">
+            <label for="clientPort" style="margin:0;">Porta local:</label>
+            <input id="clientPort" type="number" min="1" max="65535" value="25565" style="width: 100px;" />
+            <button id="btnJoin">Entrar no Mundo</button>
+          </div>
+          <div id="joinAddressBox" class="address-box" style="display:none;">
+            No Minecraft, conecte em: <span id="joinAddress">127.0.0.1:25565</span>
+          </div>
+          <div class="hint">Depois de conectar, abra o Minecraft → <b>Multiplayer → Conexão Direta</b> → digite <b>localhost</b>.</div>
+        </fieldset>
+      </div>
+    </div>
+
+    <div class="xp-statusbar">
+      <span class="row" style="gap:6px;">
+        <img src="logo.png" alt="" width="15" height="15" style="display:block;" />
+        <span>PeerMine • Túnel P2P Isolado (Zero VPN)</span>
+      </span>
+      <span>Rust + QUIC (TLS 1.3) • TCP_NODELAY</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

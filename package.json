@@ -1,0 +1,14 @@
+{
+  "name": "peermine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PeerMine — Túnel P2P nativo em Rust/QUIC para jogar Minecraft LAN com amigos sem Hamachi",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}

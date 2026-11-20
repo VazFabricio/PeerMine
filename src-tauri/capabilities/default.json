@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões mínimas isoladas: apenas controle básico de janela, sem acesso a arquivos ou shell.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
