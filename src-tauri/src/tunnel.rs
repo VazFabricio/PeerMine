@@ -147,6 +147,7 @@ impl Default for TunnelState {
                 let sess_c = Arc::clone(&sess_srv);
 
                 tokio::spawn(async move {
+                    #[allow(clippy::result_large_err)]
                     let callback = |req: &Request, response: Response| {
                         let query = req.uri().query().unwrap_or("");
                         let ok = query
