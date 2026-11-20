@@ -25,9 +25,11 @@ sequenceDiagram
 ---
 
 ## Por que usar o PeerMine no lugar do Hamachi?
+- **100% P2P Direto (Zero Relay):** não passa por servidores intermediários lentos nos EUA/Europa; descobre rotas diretas combinando **STUN (Cloudflare/Google)**, **UPnP/NAT-PMP/PCP**, **UDP Pre-Punching** e **IPv6**.
+- **Controle de congestionamento Google BBRv3 + ACK Imediato (1 ms):** evita *bufferbloat* durante o envio de chunks pesados, mantendo o combate contra mobs, quebra de blocos e coleta de itens instantâneos.
+- **MTU calibrado para PPPoE/Fibra (1380 B) + Auto-Reconexão:** evita fragmentação UDP e *blackholes* comuns em provedores brasileiros e reconecta automaticamente a sessão QUIC em caso de oscilação de rede.
 - **Sem driver de VPN no Windows:** não instala adaptador de rede virtual e não precisa de administrador.
 - **Um único código para vários amigos:** o Host gera um código `PM1:...` e todos os amigos podem entrar usando esse mesmo código.
-- **Menor latência:** o tráfego TCP do Minecraft é encaminhado diretamente em **Rust (`tokio` + `iroh`)** com `TCP_NODELAY` (sem passar pelo WebView2/JS), evitando o lag de servidores relay distantes.
 - **Criptografia ponta a ponta:** QUIC com **TLS 1.3** obrigatório.
 - **Isolamento:** CSP estrita (`script-src 'self'`), permissões Tauri mínimas (`core:default`), sem acesso a arquivos ou shell.
 
