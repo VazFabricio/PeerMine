@@ -1,6 +1,6 @@
 {
   "name": "peermine",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "PeerMine — Túnel P2P nativo em Rust/QUIC para jogar Minecraft LAN com amigos sem Hamachi",
   "scripts": {
